@@ -61,29 +61,12 @@ class HOTSPOT_PT_cutter(bpy.types.Panel):
         row.operator("hotspot.activate_cut_tool")
         layout.prop(settings, "cutter_midpoint_snap")
         layout.prop(settings, "cutter_grid_enabled")
+        loop_row = layout.row()
+        loop_row.enabled = not settings.cutter_grid_enabled
+        loop_row.prop(settings, "cutter_line_cuts")
         grid_row = layout.row()
         grid_row.enabled = settings.cutter_grid_enabled
         grid_row.prop(settings, "cutter_grid_size")
-
-
-class HOTSPOT_PT_toolbar_cutter(bpy.types.Panel):
-    bl_space_type = "IMAGE_EDITOR"
-    bl_region_type = "TOOLS"
-    bl_label = "Hotspot"
-    bl_options = {"HIDE_HEADER"}
-
-    @classmethod
-    def poll(cls, context):
-        space = getattr(context, "space_data", None)
-        return getattr(space, "type", None) == "IMAGE_EDITOR" and getattr(space, "mode", None) == "PAINT"
-
-    def draw(self, context):
-        layout = self.layout
-        column = layout.column(align=True)
-        column.scale_y = 1.4
-        button = column.row(align=True)
-        button.enabled = bool(context.scene.hotspot_project.nodes)
-        button.operator("hotspot.activate_cut_tool", text="", icon="MOD_BOOLEAN")
 
 
 class HOTSPOT_PT_region(bpy.types.Panel):
@@ -193,7 +176,6 @@ classes = (
     HOTSPOT_UL_nodes,
     HOTSPOT_PT_canvas,
     HOTSPOT_PT_cutter,
-    HOTSPOT_PT_toolbar_cutter,
     HOTSPOT_PT_region,
     HOTSPOT_PT_overlay,
     HOTSPOT_PT_export,

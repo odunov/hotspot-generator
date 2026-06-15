@@ -83,6 +83,7 @@ class HotspotCanvasSettings(bpy.types.PropertyGroup):
     grid_columns: IntProperty(name="Columns", default=2, min=1, max=16)
     cutter_midpoint_snap: BoolProperty(name="Midpoint Snap", default=True)
     cutter_grid_enabled: BoolProperty(name="Grid Cut", default=False)
+    cutter_line_cuts: IntProperty(name="Loop Cuts", default=1, min=1, max=16)
     cutter_grid_size: IntProperty(name="Grid Size", default=2, min=2, max=16)
     overlay_enabled: BoolProperty(name="Overlay", default=True)
     leaf_border_width: FloatProperty(

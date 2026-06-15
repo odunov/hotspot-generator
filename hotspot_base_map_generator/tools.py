@@ -7,7 +7,6 @@ from bpy.types import WorkSpaceTool
 
 TOOL_ID = "hotspot.region_cutter"
 TOOL_CONTEXT_MODE = "PAINT"
-_enabled = False
 _status_text_active = False
 _status_timer_running = False
 _status_text_last_refresh = 0.0
@@ -19,7 +18,7 @@ class HOTSPOT_WST_region_cutter(WorkSpaceTool):
     bl_context_mode = TOOL_CONTEXT_MODE
     bl_idname = TOOL_ID
     bl_label = "Hotspot Cut"
-    bl_description = "Cut hotspot leaf regions with midpoint subdivisions"
+    bl_description = "Cut hotspot leaf regions with line and grid subdivisions"
     bl_icon = "ops.generic.select_box"
     bl_widget = None
     bl_keymap = (
@@ -105,11 +104,11 @@ def _draw_status_item(layout, keymap, operator_id, text, delta=None, fallback=""
         row.template_event_from_keymap_item(item, text=text)
 
 
-def _draw_grid_size_status_item(layout):
+def _draw_amount_status_item(layout, text):
     row = layout.row(align=True)
     row.label(text="", icon="EVENT_SHIFT")
     row.label(text="", icon="MOUSE_MMB_SCROLL")
-    row.label(text="Grid Size")
+    row.label(text=text)
 
 
 def _draw_status_text(self, context):
@@ -119,14 +118,16 @@ def _draw_status_text(self, context):
     snap_text = "Snap On" if settings is None or settings.cutter_midpoint_snap else "Snap Off"
     if settings is None or not settings.cutter_grid_enabled:
         grid_text = "Grid Off"
+        amount_text = f"Cuts {settings.cutter_line_cuts if settings is not None else 1}"
     else:
         grid_text = f"Grid {settings.cutter_grid_size}x{settings.cutter_grid_size}"
+        amount_text = f"Grid {settings.cutter_grid_size}x{settings.cutter_grid_size}"
 
     flow = layout.grid_flow(columns=4, align=True, row_major=True)
     _draw_status_item(flow, keymap, "hotspot.cut_region_at_cursor", "Cut", fallback="LMB Cut")
     _draw_status_item(flow, keymap, "hotspot.toggle_midpoint_snap", snap_text, fallback=f"M {snap_text}")
     _draw_status_item(flow, keymap, "hotspot.toggle_grid_cut", grid_text, fallback=f"G {grid_text}")
-    _draw_grid_size_status_item(flow)
+    _draw_amount_status_item(flow, amount_text)
 
     layout.separator_spacer()
     layout.template_reports_banner()
@@ -211,47 +212,6 @@ def update_status_text(context, active):
         clear_status_text(context)
 
 
-def _clean_separators(items):
-    cleaned = []
-    previous_separator = True
-    for item in items:
-        if item is None:
-            if not previous_separator:
-                cleaned.append(item)
-            previous_separator = True
-        else:
-            cleaned.append(item)
-            previous_separator = False
-
-    while cleaned and cleaned[-1] is None:
-        cleaned.pop()
-    return cleaned
-
-
-def _remove_tool_defs_by_id(tool_id):
-    try:
-        from bl_ui.space_toolsystem_toolbar import IMAGE_PT_tools_active
-    except Exception:
-        return
-
-    tools = IMAGE_PT_tools_active._tools.get(TOOL_CONTEXT_MODE)
-    if tools is None:
-        return
-
-    updated = []
-    for item in tools:
-        if item is None:
-            updated.append(item)
-        elif type(item) is tuple:
-            group = tuple(child for child in item if getattr(child, "idname", None) != tool_id)
-            if group:
-                updated.append(group)
-        elif getattr(item, "idname", None) != tool_id:
-            updated.append(item)
-
-    tools[:] = _clean_separators(updated)
-
-
 def _tool_ids():
     try:
         from bl_ui.space_toolsystem_toolbar import IMAGE_PT_tools_active
@@ -275,7 +235,6 @@ def is_registered():
 
 
 def ensure_registered():
-    _remove_tool_defs_by_id(TOOL_ID)
     try:
         bpy.utils.unregister_tool(HOTSPOT_WST_region_cutter)
     except Exception:
@@ -302,31 +261,13 @@ def _tag_image_editors_for_redraw():
             if area.type == "IMAGE_EDITOR":
                 area.tag_redraw()
 
-
-def _delayed_register_tool():
-    if not _enabled:
-        return None
-    ensure_registered()
-    _tag_image_editors_for_redraw()
-    return None
-
-
 def register():
-    global _enabled
-    _enabled = True
     ensure_registered()
-    try:
-        bpy.app.timers.register(_delayed_register_tool, first_interval=0.1)
-    except Exception:
-        pass
 
 
 def unregister():
-    global _enabled
-    _enabled = False
     clear_status_text(bpy.context)
     try:
         bpy.utils.unregister_tool(HOTSPOT_WST_region_cutter)
     except Exception:
         pass
-    _remove_tool_defs_by_id(TOOL_ID)

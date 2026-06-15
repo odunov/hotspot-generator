@@ -80,6 +80,22 @@ def main():
 
     bpy.ops.hotspot.new_canvas()
     project.is_dirty = False
+    project.settings.cutter_grid_enabled = False
+    project.settings.cutter_line_cuts = 1
+    bpy.ops.hotspot.adjust_grid_size(delta=1)
+    assert not project.settings.cutter_grid_enabled, "Line cutter amount adjustment should not enable grid mode"
+    assert project.settings.cutter_line_cuts == 2, f"Expected 2 loop cuts, got {project.settings.cutter_line_cuts}"
+    _leaf, _action, segment_ids = operators.cut_project_at_uv(project, 0.8, 0.9)
+    leaves = derive_leaf_regions(properties.nodes_to_records(project))
+    assert len(leaves) == 3, f"Expected 3 leaves after 2 loop cuts, got {len(leaves)}"
+    assert project.active_node_id == segment_ids[2], f"Expected clicked segment to be active, got {project.active_node_id}"
+    assert rounded_bounds(leaves[0]) == (0.0, 0.0, 0.333333, 1.0), f"Unexpected first loop-cut bounds: {rounded_bounds(leaves[0])}"
+    assert rounded_bounds(leaves[2]) == (0.666667, 0.0, 1.0, 1.0), f"Unexpected last loop-cut bounds: {rounded_bounds(leaves[2])}"
+
+    bpy.ops.hotspot.new_canvas()
+    project.is_dirty = False
+    project.settings.cutter_grid_enabled = False
+    project.settings.cutter_grid_size = 2
     bpy.ops.hotspot.toggle_grid_cut()
     assert project.settings.cutter_grid_enabled, "Grid cut toggle did not enable grid mode"
     bpy.ops.hotspot.adjust_grid_size(delta=1)

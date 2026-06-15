@@ -1,7 +1,6 @@
 """Blender Image datablock helpers."""
 
 import os
-import re
 
 import bpy
 
@@ -9,8 +8,7 @@ from .constants import IMAGE_PREFIX
 
 
 def safe_name(value):
-    value = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip())
-    return value or "Scene"
+    return bpy.path.clean_name((value or "").strip()) or "Scene"
 
 
 def id_image_name(scene):
@@ -60,4 +58,3 @@ def export_image_png(image, directory, filename_stem, suffix="ID"):
     image.file_format = "PNG"
     image.save()
     return path
-

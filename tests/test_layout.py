@@ -5,12 +5,14 @@ from hotspot_base_map_generator.model.layout import (
     Bounds,
     build_root,
     choose_cut_orientation,
+    cursor_segment_index,
     cursor_split_ratio,
     derive_leaf_regions,
     find_leaf_at_uv,
     grid_preview_ratios,
     grid_subdivide_node,
     is_leaf,
+    loop_cut_preview_ratios,
     split_node,
 )
 
@@ -126,6 +128,24 @@ class LayoutTests(unittest.TestCase):
             grid_preview_ratios(1)
         with self.assertRaises(ValueError):
             grid_preview_ratios(17)
+
+    def test_loop_cut_preview_ratios(self):
+        self.assertEqual(loop_cut_preview_ratios(1), [0.5])
+        self.assertEqual(loop_cut_preview_ratios(2), [1 / 3, 2 / 3])
+        self.assertEqual(loop_cut_preview_ratios(3), [0.25, 0.5, 0.75])
+
+    def test_loop_cut_preview_ratios_reject_invalid_counts(self):
+        with self.assertRaises(ValueError):
+            loop_cut_preview_ratios(0)
+        with self.assertRaises(ValueError):
+            loop_cut_preview_ratios(17)
+
+    def test_cursor_segment_index_uses_local_leaf_coordinate(self):
+        bounds = Bounds(0.25, 0.0, 0.75, 1.0)
+
+        self.assertEqual(cursor_segment_index(bounds, SPLIT_VERTICAL, 0.26, 0.5, 3), 0)
+        self.assertEqual(cursor_segment_index(bounds, SPLIT_VERTICAL, 0.5, 0.5, 3), 1)
+        self.assertEqual(cursor_segment_index(bounds, SPLIT_VERTICAL, 0.74, 0.5, 3), 2)
 
     def test_grid_subdivide_2x2_creates_row_major_equal_cells(self):
         nodes, cell_ids = grid_subdivide_node(build_root(), 1, 2, 2)

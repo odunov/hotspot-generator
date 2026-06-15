@@ -8,7 +8,7 @@ loading Blender.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Iterable, Sequence
+from typing import Sequence
 
 from ..constants import SPLIT_HORIZONTAL, SPLIT_NONE, SPLIT_VERTICAL
 
@@ -283,11 +283,29 @@ def cursor_split_ratio(bounds: Bounds, orientation: str, u: float, v: float, mid
     raise ValueError(f"Unsupported split orientation: {orientation}")
 
 
+def cursor_segment_index(bounds: Bounds, orientation: str, u: float, v: float, segment_count: int) -> int:
+    bounds.validate()
+    if segment_count < 1:
+        raise ValueError("Segment count must be at least 1")
+
+    if orientation == SPLIT_VERTICAL:
+        ratio = (u - bounds.x0) / (bounds.x1 - bounds.x0)
+    elif orientation == SPLIT_HORIZONTAL:
+        ratio = (v - bounds.y0) / (bounds.y1 - bounds.y0)
+    else:
+        raise ValueError(f"Unsupported split orientation: {orientation}")
+
+    return max(0, min(segment_count - 1, int(ratio * segment_count)))
+
+
+def loop_cut_preview_ratios(cuts: int) -> list[float]:
+    if not 1 <= cuts <= 16:
+        raise ValueError("Loop cuts must be between 1 and 16")
+    segment_count = cuts + 1
+    return [index / segment_count for index in range(1, segment_count)]
+
+
 def grid_preview_ratios(size: int) -> list[float]:
     if not 2 <= size <= 16:
         raise ValueError("Grid size must be between 2 and 16")
     return [index / size for index in range(1, size)]
-
-
-def flatten_node_ids(nodes: Iterable[NodeRecord]) -> list[int]:
-    return [node.node_id for node in nodes]

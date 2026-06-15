@@ -1,16 +1,18 @@
 """Defensive Image Editor overlay for hotspot region outlines."""
 
 import bpy
+from bpy.app.handlers import persistent
 
 from . import properties
 from .constants import SPLIT_VERTICAL
-from .model.layout import choose_cut_orientation, cursor_split_ratio, derive_leaf_regions, find_leaf_at_uv, grid_preview_ratios
-
-try:
-    from bpy.app.handlers import persistent
-except Exception:
-    def persistent(func):
-        return func
+from .model.layout import (
+    choose_cut_orientation,
+    cursor_split_ratio,
+    derive_leaf_regions,
+    find_leaf_at_uv,
+    grid_preview_ratios,
+    loop_cut_preview_ratios,
+)
 
 _handler = None
 _shader_cache = None
@@ -133,6 +135,24 @@ def _draw_cut_preview(context, region, shader, leaves):
         return
 
     orientation = choose_cut_orientation(leaf.bounds, project.cut_preview_u, project.cut_preview_v)
+    cuts = max(1, min(16, settings.cutter_line_cuts))
+    if cuts > 1:
+        for ratio in loop_cut_preview_ratios(cuts):
+            if orientation == SPLIT_VERTICAL:
+                x = b.x0 + (b.x1 - b.x0) * ratio
+                coords = (
+                    _view_to_region(region, x, b.y0),
+                    _view_to_region(region, x, b.y1),
+                )
+            else:
+                y = b.y0 + (b.y1 - b.y0) * ratio
+                coords = (
+                    _view_to_region(region, b.x0, y),
+                    _view_to_region(region, b.x1, y),
+                )
+            _draw_line(shader, coords, color, width)
+        return
+
     ratio = cursor_split_ratio(b, orientation, project.cut_preview_u, project.cut_preview_v, settings.cutter_midpoint_snap)
     if orientation == SPLIT_VERTICAL:
         x = b.x0 + (b.x1 - b.x0) * ratio

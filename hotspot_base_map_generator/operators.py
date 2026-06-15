@@ -14,6 +14,7 @@ from .model.layout import (
     NodeRecord,
     build_root,
     choose_cut_orientation,
+    cursor_segment_index,
     cursor_split_ratio,
     derive_leaf_regions,
     find_leaf_at_uv,
@@ -175,6 +176,16 @@ def cut_project_at_uv(project, u, v):
         return leaf, f"{size}x{size} grid", cell_ids
 
     orientation = choose_cut_orientation(leaf.bounds, u, v)
+    cuts = max(1, min(16, settings.cutter_line_cuts))
+    if cuts > 1:
+        segment_count = cuts + 1
+        segment_ids = split_project_node_into_equal_segments(project, leaf.node_id, orientation, segment_count)
+        selected_index = cursor_segment_index(leaf.bounds, orientation, u, v, segment_count)
+        properties.set_active_node(project, segment_ids[selected_index])
+        project.is_dirty = True
+        properties.clear_cut_preview(project)
+        return leaf, f"{orientation.lower()} {cuts} cuts", segment_ids
+
     ratio = cursor_split_ratio(leaf.bounds, orientation, u, v, settings.cutter_midpoint_snap)
     if orientation == SPLIT_VERTICAL:
         split_x = leaf.bounds.x0 + (leaf.bounds.x1 - leaf.bounds.x0) * ratio
@@ -455,8 +466,8 @@ class HOTSPOT_OT_toggle_grid_cut(bpy.types.Operator):
 
 class HOTSPOT_OT_adjust_grid_size(bpy.types.Operator):
     bl_idname = "hotspot.adjust_grid_size"
-    bl_label = "Adjust Grid Cut Size"
-    bl_description = "Adjust square grid cutter size and enable grid cut mode"
+    bl_label = "Adjust Cutter Amount"
+    bl_description = "Adjust loop cut count in line mode or square grid size in grid mode"
     bl_options = {"REGISTER"}
 
     delta: IntProperty(name="Delta", default=1, min=-16, max=16)
@@ -467,11 +478,15 @@ class HOTSPOT_OT_adjust_grid_size(bpy.types.Operator):
 
     def execute(self, context):
         settings = project_from_context(context).settings
-        settings.cutter_grid_enabled = True
-        settings.cutter_grid_size = max(2, min(16, settings.cutter_grid_size + self.delta))
+        if settings.cutter_grid_enabled:
+            settings.cutter_grid_size = max(2, min(16, settings.cutter_grid_size + self.delta))
+            message = f"Grid cut {settings.cutter_grid_size}x{settings.cutter_grid_size}"
+        else:
+            settings.cutter_line_cuts = max(1, min(16, settings.cutter_line_cuts + self.delta))
+            message = f"Loop cuts {settings.cutter_line_cuts}"
         tools.update_status_text(context, True)
         tag_hotspot_areas_for_redraw(context)
-        self.report({"INFO"}, f"Grid cut {settings.cutter_grid_size}x{settings.cutter_grid_size}")
+        self.report({"INFO"}, message)
         return {"FINISHED"}
 
 

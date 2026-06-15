@@ -8,7 +8,7 @@ from array import array
 from typing import Sequence
 
 from .constants import COLOR_MODE_GRAYSCALE, COLOR_MODE_RANDOM, COLOR_MODE_STORED
-from .model.layout import Bounds, LeafRegion, NodeRecord, derive_leaf_regions
+from .model.layout import Bounds, LeafRegion
 
 Color = tuple[float, float, float, float]
 
@@ -74,16 +74,4 @@ def render_id_pixels_from_leaves(
             start = (y * width + x0) * 4
             pixels[start : start + row_len] = row
     return pixels
-
-
-def render_id_pixels(
-    nodes: Sequence[NodeRecord],
-    width: int,
-    height: int,
-    seed: int = 1337,
-    color_mode: str = COLOR_MODE_RANDOM,
-    background: Color = (0.0, 0.0, 0.0, 1.0),
-) -> array:
-    leaves = derive_leaf_regions(nodes)
-    return render_id_pixels_from_leaves(leaves, width, height, seed, color_mode, background)
 
