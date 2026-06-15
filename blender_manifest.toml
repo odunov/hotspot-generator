@@ -1,0 +1,13 @@
+schema_version = "1.0.0"
+
+id = "hotspot_base_map_generator"
+version = "0.1.0"
+name = "Hotspot Base Map Generator"
+tagline = "Author rectangular hotspot ID maps for external texturing"
+maintainer = "Hotspot Base Map Generator Contributors"
+type = "add-on"
+
+blender_version_min = "5.0.0"
+license = ["SPDX:GPL-3.0-or-later"]
+tags = ["UV", "Paint", "Import-Export"]
+
