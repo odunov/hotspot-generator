@@ -1,6 +1,18 @@
 # Hotspot Base Map Generator
 
-Blender 5.x extension for drawing rectangular hotspot atlases and exporting texture-ready ID, mask, height, normal, AO, and curvature maps.
+Blender 5.x extension for generating hotspot texture bases: rectangular atlas maps you can use as a starting point in external texturing tools.
+
+## Demo
+
+<video src="https://github.com/odunov/hotspot-generator/raw/main/media/hotspot-base-map-generator-demo.mp4" controls muted></video>
+
+[Watch the demo video](media/hotspot-base-map-generator-demo.mp4)
+
+## Scope
+
+Hotspot Base Map Generator creates base maps for hotspot texture workflows. It does not generate complete finished hotspot textures, and it does not UV-map meshes to a hotspot atlas.
+
+If you need hotspot UV mapping, check out [Zen UV](https://superhivemarket.com/products/zen-uv) (paid) or [DreamUV](https://github.com/leukbaars/DreamUV) (free).
 
 ## Features
 
