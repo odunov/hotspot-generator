@@ -11,3 +11,15 @@ blender_version_min = "5.0.0"
 license = ["SPDX:GPL-3.0-or-later"]
 tags = ["UV", "Paint", "Import-Export"]
 
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  ".*",
+  "/*.zip",
+  "*.blend[1-9]",
+  "dist/",
+  "tests/",
+  "tools/",
+  "*.md",
+  "LICENSE",
+]
