@@ -3,7 +3,7 @@
 import bpy
 
 from . import properties
-from .constants import SPLIT_HORIZONTAL, SPLIT_VERTICAL
+from .constants import MAP_IMAGE_ATTRS, MAP_KEYS, SPLIT_HORIZONTAL, SPLIT_VERTICAL
 
 
 class HOTSPOT_UL_nodes(bpy.types.UIList):
@@ -30,6 +30,28 @@ class HOTSPOT_PT_canvas(bpy.types.Panel):
 
         settings = project.settings
         layout.prop(settings, "resolution")
+        layout.prop(settings, "auto_preview")
+        layout.prop(settings, "preview_map")
+        layout.prop(settings, "gutter_pixels")
+        layout.prop(settings, "edge_width_pixels")
+        layout.prop(settings, "mask_mode")
+        layout.prop(settings, "mask_size_pixels")
+        layout.prop(settings, "mask_softness_pixels")
+        layout.prop(settings, "mask_max_coverage")
+        layout.prop(settings, "mask_invert")
+        layout.prop(settings, "base_height")
+        layout.prop(settings, "height_depth")
+        layout.prop(settings, "bevel_width_pixels")
+        layout.prop(settings, "bevel_strength")
+        layout.prop(settings, "corner_radius_pixels")
+        layout.prop(settings, "edge_softness_pixels")
+        layout.prop(settings, "normal_radius_pixels")
+        layout.prop(settings, "normal_strength")
+        layout.prop(settings, "normal_format")
+        layout.prop(settings, "ao_radius")
+        layout.prop(settings, "ao_strength")
+        layout.prop(settings, "curvature_radius_pixels")
+        layout.prop(settings, "curvature_strength")
         layout.prop(settings, "color_seed")
         layout.prop(settings, "color_mode")
         layout.prop(settings, "background_color")
@@ -39,10 +61,14 @@ class HOTSPOT_PT_canvas(bpy.types.Panel):
         row.operator("hotspot.render_map")
         row.operator("hotspot.export_maps")
 
-        if project.id_image_name:
-            layout.label(text=f"Image: {project.id_image_name}")
+        image_name = getattr(project, MAP_IMAGE_ATTRS.get(settings.preview_map, "id_image_name"), "")
+        if image_name:
+            layout.label(text=f"Image: {image_name}")
+        if project.preview_status:
+            layout.label(text=f"Preview: {project.preview_status}")
         if project.nodes and project.is_dirty:
-            layout.label(text="Needs regeneration")
+            dirty = project.dirty_map_keys or ",".join(MAP_KEYS)
+            layout.label(text=f"Stale maps: {dirty.replace(',', ', ')}")
 
 
 class HOTSPOT_PT_cutter(bpy.types.Panel):
@@ -167,6 +193,15 @@ class HOTSPOT_PT_export(bpy.types.Panel):
 
         layout.prop(settings, "export_directory")
         layout.prop(settings, "export_stem")
+        row = layout.row(align=True)
+        row.prop(settings, "export_id")
+        row.prop(settings, "export_edge")
+        row.prop(settings, "export_mask")
+        row = layout.row(align=True)
+        row.prop(settings, "export_height")
+        row.prop(settings, "export_normal")
+        row.prop(settings, "export_ao")
+        row.prop(settings, "export_curvature")
         row = layout.row()
         row.enabled = bool(project.nodes)
         row.operator("hotspot.export_maps")

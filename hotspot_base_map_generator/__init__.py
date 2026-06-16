@@ -6,7 +6,7 @@ except ModuleNotFoundError:  # Allows pure Python tests outside Blender.
     bpy = None
 
 if bpy is not None:
-    from . import operators, overlay, properties, tools, ui
+    from . import gpu_preview, operators, overlay, properties, tools, ui
 
 
 def register():
@@ -16,6 +16,7 @@ def register():
     properties.register()
     operators.register()
     ui.register()
+    gpu_preview.register()
     overlay.register()
     tools.register()
 
@@ -26,6 +27,7 @@ def unregister():
 
     tools.unregister()
     overlay.unregister()
+    gpu_preview.unregister()
     ui.unregister()
     operators.unregister()
     properties.unregister()

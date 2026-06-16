@@ -1,11 +1,18 @@
 """Blender operators for Hotspot Base Map Generator."""
 
+import time
+
 import bpy
-from bpy.props import EnumProperty, FloatProperty, IntProperty
+from bpy.props import EnumProperty, FloatProperty, IntProperty, StringProperty
 
 from . import image_io, properties, tools
 from .constants import (
     COLOR_MODE_RANDOM,
+    HEIGHT_DERIVED_MAP_KEYS,
+    MAP_EXPORT_ATTRS,
+    MAP_IMAGE_ATTRS,
+    MAP_KEYS,
+    MAP_SUFFIXES,
     SPLIT_HORIZONTAL,
     SPLIT_NONE,
     SPLIT_VERTICAL,
@@ -20,13 +27,30 @@ from .model.layout import (
     find_leaf_at_uv,
     validate_grid_dimensions,
 )
-from .raster import deterministic_color, render_id_pixels_from_leaves
+from .raster import (
+    deterministic_color,
+    render_ao_pixels_from_height,
+    render_curvature_pixels_from_height,
+    render_edge_pixels_from_leaves,
+    render_height_pixels_from_values,
+    render_height_values_from_leaves,
+    render_id_pixels_from_leaves,
+    render_mask_pixels_from_leaves,
+    render_normal_pixels_from_height,
+)
 
 
 SPLIT_ITEMS = (
     (SPLIT_HORIZONTAL, "Horizontal", "Split selected region into bottom and top halves"),
     (SPLIT_VERTICAL, "Vertical", "Split selected region into left and right halves"),
 )
+
+_AUTO_PREVIEW_DELAY = 0.025
+_auto_preview_scenes = set()
+_auto_preview_scheduled_at = {}
+_auto_preview_timer_running = False
+_last_render_backend = ""
+_last_render_ms = 0.0
 
 
 def project_from_context(context):
@@ -51,31 +75,301 @@ def set_node_color_from_seed(node, seed, mode=COLOR_MODE_RANDOM):
     node.color = deterministic_color(node.node_id, seed, mode)
 
 
-def render_project_id_map(context):
-    project = project_from_context(context)
+def _scene_from_project(project):
+    scene = getattr(project, "id_data", None)
+    return scene if scene is not None and hasattr(scene, "hotspot_project") else None
+
+
+def _tag_all_image_editors():
+    for window in getattr(bpy.context.window_manager, "windows", []):
+        for area in getattr(window.screen, "areas", []):
+            if area.type == "IMAGE_EDITOR":
+                area.tag_redraw()
+
+
+def _project_maps_missing(project, keys=MAP_KEYS):
+    return any(bpy.data.images.get(getattr(project, MAP_IMAGE_ATTRS[key], "")) is None for key in keys)
+
+
+def dirty_map_keys(project):
+    if not getattr(project, "is_dirty", False):
+        return set()
+    keys = set(filter(None, getattr(project, "dirty_map_keys", "").split(",")))
+    if not keys:
+        keys.update(MAP_KEYS)
+    return keys
+
+
+def _set_dirty_map_keys(project, keys):
+    keys = [key for key in MAP_KEYS if key in keys]
+    project.dirty_map_keys = ",".join(keys)
+    project.is_dirty = bool(keys)
+
+
+def project_maps_dirty(project, keys=MAP_KEYS):
+    return bool(dirty_map_keys(project).intersection(_normalize_map_keys(keys)))
+
+
+def mark_project_clean(project, keys=MAP_KEYS):
+    dirty = dirty_map_keys(project)
+    dirty.difference_update(_normalize_map_keys(keys))
+    _set_dirty_map_keys(project, dirty)
+
+
+def _normalize_map_keys(keys):
+    if isinstance(keys, str):
+        keys = (keys,)
+    normalized = []
+    for key in keys:
+        if key not in MAP_IMAGE_ATTRS:
+            raise ValueError(f"Unsupported map key: {key}")
+        if key not in normalized:
+            normalized.append(key)
+    return tuple(normalized)
+
+
+def _selected_preview_key(project):
+    key = getattr(project.settings, "preview_map", "ID")
+    return key if key in MAP_IMAGE_ATTRS else "ID"
+
+
+def show_project_preview(project, context=None):
+    key = _selected_preview_key(project)
+    image = bpy.data.images.get(getattr(project, MAP_IMAGE_ATTRS[key], ""))
+    if image is None:
+        if project.nodes and project.settings.auto_preview:
+            mark_project_dirty(project, (key,))
+        return None
+    if context is None:
+        image_io.show_image_in_open_editors(image)
+    else:
+        image_io.show_image_in_context(context, image)
+    return image
+
+
+def _image_float_buffer(key):
+    return key in HEIGHT_DERIVED_MAP_KEYS
+
+
+def _write_scene_map_images(scene, context, pixels_by_key, keys, resolution, clean):
+    project = scene.hotspot_project
+    settings = project.settings
+    images = {}
+    for key in keys:
+        pixels = pixels_by_key[key]
+        image = image_io.ensure_image(image_io.map_image_name(scene, MAP_SUFFIXES[key]), resolution, resolution, float_buffer=_image_float_buffer(key))
+        image_io.write_pixels(image, pixels)
+        setattr(project, MAP_IMAGE_ATTRS[key], image.name)
+        images[key] = image
+
+    if clean and resolution == settings.resolution:
+        mark_project_clean(project, keys)
+    if _selected_preview_key(project) in images:
+        show_project_preview(project, context)
+    return images
+
+
+def _render_scene_maps_cpu(scene, context=None, keys=MAP_KEYS, resolution=None, clean=True):
+    project = scene.hotspot_project
+    keys = _normalize_map_keys(keys)
+    settings = project.settings
+    resolution = resolution or settings.resolution
+    records = properties.nodes_to_records(project)
+    leaves = derive_leaf_regions(records)
+    pixels_by_key = {}
+
+    if "ID" in keys:
+        pixels_by_key["ID"] = render_id_pixels_from_leaves(
+            leaves,
+            resolution,
+            resolution,
+            seed=settings.color_seed,
+            color_mode=settings.color_mode,
+            background=tuple(settings.background_color),
+            gutter_pixels=settings.gutter_pixels,
+        )
+    if "EDGE" in keys:
+        pixels_by_key["EDGE"] = render_edge_pixels_from_leaves(leaves, resolution, resolution, settings.gutter_pixels, settings.edge_width_pixels)
+    if "MASK" in keys:
+        pixels_by_key["MASK"] = render_mask_pixels_from_leaves(
+            leaves,
+            resolution,
+            resolution,
+            settings.gutter_pixels,
+            settings.mask_mode,
+            settings.mask_size_pixels,
+            settings.mask_softness_pixels,
+            settings.mask_max_coverage,
+            settings.mask_invert,
+        )
+    if any(key in HEIGHT_DERIVED_MAP_KEYS for key in keys):
+        height_values = render_height_values_from_leaves(
+            leaves,
+            resolution,
+            resolution,
+            settings.gutter_pixels,
+            settings.base_height,
+            settings.height_depth,
+            settings.bevel_width_pixels,
+            settings.bevel_strength,
+            settings.corner_radius_pixels,
+            settings.edge_softness_pixels,
+        )
+        if "HEIGHT" in keys:
+            pixels_by_key["HEIGHT"] = render_height_pixels_from_values(height_values)
+        if "NORMAL" in keys:
+            pixels_by_key["NORMAL"] = render_normal_pixels_from_height(height_values, resolution, resolution, settings.normal_strength, settings.normal_format == "DIRECTX", settings.normal_radius_pixels)
+        if "AO" in keys:
+            pixels_by_key["AO"] = render_ao_pixels_from_height(height_values, resolution, resolution, settings.ao_radius, settings.ao_strength)
+        if "CURVATURE" in keys:
+            pixels_by_key["CURVATURE"] = render_curvature_pixels_from_height(height_values, resolution, resolution, settings.curvature_strength, settings.curvature_radius_pixels)
+
+    return _write_scene_map_images(scene, context, pixels_by_key, keys, resolution, clean)
+
+
+def _render_scene_maps_gpu(scene, context=None, keys=MAP_KEYS, resolution=None, clean=True):
+    keys = _normalize_map_keys(keys)
+    resolution = resolution or scene.hotspot_project.settings.resolution
+    from . import gpu_preview
+
+    pixels_by_key = {key: gpu_preview.render_scene_map_pixels(scene, key, resolution) for key in keys}
+    return _write_scene_map_images(scene, context, pixels_by_key, keys, resolution, clean)
+
+
+def render_scene_maps(scene, context=None, keys=MAP_KEYS, resolution=None, clean=True):
+    global _last_render_backend, _last_render_ms
+    project = scene.hotspot_project
     if not project.nodes:
         raise RuntimeError("Create a hotspot canvas before rendering")
 
-    settings = project.settings
-    resolution = settings.resolution
-    records = properties.nodes_to_records(project)
-    leaves = derive_leaf_regions(records)
-    pixels = render_id_pixels_from_leaves(
-        leaves,
-        resolution,
-        resolution,
-        seed=settings.color_seed,
-        color_mode=settings.color_mode,
-        background=tuple(settings.background_color),
-    )
+    keys = _normalize_map_keys(keys)
+    start = time.perf_counter()
+    try:
+        images = _render_scene_maps_gpu(scene, context, keys, resolution, clean)
+        _last_render_backend = "GPU"
+        return images
+    except Exception:
+        images = _render_scene_maps_cpu(scene, context, keys, resolution, clean)
+        _last_render_backend = "CPU fallback"
+        return images
+    finally:
+        _last_render_ms = (time.perf_counter() - start) * 1000.0
 
-    image = image_io.ensure_image(image_io.id_image_name(context.scene), resolution, resolution)
-    image_io.write_pixels(image, pixels)
-    image_io.show_image_in_context(context, image)
 
-    project.id_image_name = image.name
-    project.is_dirty = False
+def render_scene_id_map(scene, context=None):
+    return render_scene_maps(scene, context, ("ID",))["ID"]
+
+
+def render_project_id_map(context):
+    return render_scene_id_map(context.scene, context)
+
+
+def _log_preview_timing(project, key, backend, generation_ms, debounce_ms):
+    debounce = "forced" if debounce_ms is None else f"{debounce_ms:.1f} ms debounce"
+    message = f"Preview {key} {backend}: {generation_ms:.1f} ms generation after {debounce}"
+    project.preview_status = f"{key} {backend} {generation_ms:.1f} ms, {debounce}"
+    try:
+        bpy.ops.hotspot.preview_log(message=message)
+    except Exception:
+        print(f"[Hotspot] {message}")
+
+
+def render_scene_preview_map(scene, context=None, debounce_ms=None):
+    project = scene.hotspot_project
+    key = _selected_preview_key(project)
+    start = time.perf_counter()
+    try:
+        from . import gpu_preview
+
+        if gpu_preview.render_scene_preview(scene, key):
+            _log_preview_timing(project, key, "GPU", (time.perf_counter() - start) * 1000.0, debounce_ms)
+            return None
+    except Exception:
+        pass
+    project.preview_status = "CPU fallback"
+    image = _render_scene_maps_cpu(scene, context, (key,), project.settings.resolution, clean=False).get(key)
+    _log_preview_timing(project, key, "CPU fallback", (time.perf_counter() - start) * 1000.0, debounce_ms)
     return image
+
+
+def _auto_preview_timer(force=False):
+    global _auto_preview_timer_running
+    now = time.perf_counter()
+    ready = []
+    wait = []
+    for scene_name in tuple(_auto_preview_scenes):
+        elapsed = now - _auto_preview_scheduled_at.get(scene_name, now)
+        if force or elapsed >= _AUTO_PREVIEW_DELAY:
+            ready.append((scene_name, None if force else elapsed * 1000.0))
+        else:
+            wait.append(_AUTO_PREVIEW_DELAY - elapsed)
+
+    for scene_name, debounce_ms in ready:
+        _auto_preview_scenes.discard(scene_name)
+        _auto_preview_scheduled_at.pop(scene_name, None)
+        scene = bpy.data.scenes.get(scene_name)
+        if scene is None or not hasattr(scene, "hotspot_project"):
+            continue
+        project = scene.hotspot_project
+        key = _selected_preview_key(project)
+        missing = _project_maps_missing(project, (key,))
+        if project.nodes and project.settings.auto_preview and (project_maps_dirty(project, (key,)) or missing):
+            try:
+                render_scene_preview_map(scene, debounce_ms=debounce_ms)
+            except Exception:
+                pass
+    _tag_all_image_editors()
+    if _auto_preview_scenes:
+        _auto_preview_timer_running = True
+        return max(0.01, min(wait) if wait else _AUTO_PREVIEW_DELAY)
+    _auto_preview_timer_running = False
+    return None
+
+
+def schedule_auto_preview(project):
+    global _auto_preview_timer_running
+    if not project.nodes or not project.settings.auto_preview:
+        return
+    scene = _scene_from_project(project)
+    if scene is None:
+        return
+    key = _selected_preview_key(project)
+    missing = _project_maps_missing(project, (key,))
+    if not project_maps_dirty(project, (key,)) and not missing:
+        return
+    _auto_preview_scenes.add(scene.name)
+    _auto_preview_scheduled_at[scene.name] = time.perf_counter()
+    if not _auto_preview_timer_running:
+        bpy.app.timers.register(_auto_preview_timer, first_interval=_AUTO_PREVIEW_DELAY)
+        _auto_preview_timer_running = True
+
+
+def cancel_auto_preview():
+    global _auto_preview_timer_running
+    _auto_preview_scenes.clear()
+    _auto_preview_scheduled_at.clear()
+    _auto_preview_timer_running = False
+    try:
+        if bpy.app.timers.is_registered(_auto_preview_timer):
+            bpy.app.timers.unregister(_auto_preview_timer)
+    except Exception:
+        pass
+
+
+def flush_auto_preview():
+    try:
+        if bpy.app.timers.is_registered(_auto_preview_timer):
+            bpy.app.timers.unregister(_auto_preview_timer)
+    except Exception:
+        pass
+    return _auto_preview_timer(force=True)
+
+
+def mark_project_dirty(project, keys=MAP_KEYS):
+    dirty = dirty_map_keys(project)
+    dirty.update(_normalize_map_keys(keys))
+    _set_dirty_map_keys(project, dirty)
+    schedule_auto_preview(project)
 
 
 def region_coords_to_uv(context, region_x, region_y):
@@ -121,7 +415,7 @@ def split_project_node(project, node_id, orientation, ratio=0.5, select_child_in
         )
         set_node_color_from_seed(child, project.settings.color_seed, project.settings.color_mode)
 
-    project.is_dirty = True
+    mark_project_dirty(project)
     properties.clear_cut_preview(project)
     selected_id = first_id + max(0, min(1, select_child_index))
     properties.set_active_node(project, selected_id)
@@ -157,7 +451,7 @@ def grid_subdivide_project_node(project, node_id, rows, columns):
 
     if cell_ids:
         properties.set_active_node(project, cell_ids[0])
-    project.is_dirty = True
+    mark_project_dirty(project)
     properties.clear_cut_preview(project)
     return cell_ids
 
@@ -182,7 +476,7 @@ def cut_project_at_uv(project, u, v):
         segment_ids = split_project_node_into_equal_segments(project, leaf.node_id, orientation, segment_count)
         selected_index = cursor_segment_index(leaf.bounds, orientation, u, v, segment_count)
         properties.set_active_node(project, segment_ids[selected_index])
-        project.is_dirty = True
+        mark_project_dirty(project)
         properties.clear_cut_preview(project)
         return leaf, f"{orientation.lower()} {cuts} cuts", segment_ids
 
@@ -240,7 +534,13 @@ class HOTSPOT_OT_new_canvas(bpy.types.Operator):
         set_node_color_from_seed(node, project.settings.color_seed, project.settings.color_mode)
 
         project.id_image_name = ""
-        project.is_dirty = True
+        project.edge_image_name = ""
+        project.mask_image_name = ""
+        project.height_image_name = ""
+        project.normal_image_name = ""
+        project.ao_image_name = ""
+        project.curvature_image_name = ""
+        mark_project_dirty(project)
         properties.set_active_node(project, node.node_id)
         self.report({"INFO"}, "Created hotspot canvas")
         properties.clear_cut_preview(project)
@@ -536,8 +836,8 @@ class HOTSPOT_OT_activate_cut_tool(bpy.types.Operator):
 
 class HOTSPOT_OT_render_map(bpy.types.Operator):
     bl_idname = "hotspot.render_map"
-    bl_label = "Render ID Map"
-    bl_description = "Generate the hotspot ID map image"
+    bl_label = "Render Maps"
+    bl_description = "Generate the hotspot map images"
     bl_options = {"REGISTER"}
 
     @classmethod
@@ -552,21 +852,21 @@ class HOTSPOT_OT_render_map(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            image = render_project_id_map(context)
+            images = render_scene_maps(context.scene, context)
         except Exception as exc:
             self.report({"ERROR"}, str(exc))
             return {"CANCELLED"}
 
         properties.clear_cut_preview(project_from_context(context))
         tag_hotspot_areas_for_redraw(context)
-        self.report({"INFO"}, f"Rendered {image.name}")
+        self.report({"INFO"}, f"Rendered {len(images)} hotspot maps via {_last_render_backend} in {_last_render_ms:.1f} ms")
         return {"FINISHED"}
 
 
 class HOTSPOT_OT_export_maps(bpy.types.Operator):
     bl_idname = "hotspot.export_maps"
-    bl_label = "Export ID Map"
-    bl_description = "Export the hotspot ID map as PNG"
+    bl_label = "Export Maps"
+    bl_description = "Export checked hotspot maps as PNG files"
     bl_options = {"REGISTER"}
 
     @classmethod
@@ -581,26 +881,46 @@ class HOTSPOT_OT_export_maps(bpy.types.Operator):
 
     def execute(self, context):
         project = project_from_context(context)
-        image = bpy.data.images.get(project.id_image_name)
-        regenerated = False
-        if image is None or project.is_dirty:
-            try:
-                image = render_project_id_map(context)
-                regenerated = True
-            except Exception as exc:
-                self.report({"ERROR"}, str(exc))
-                return {"CANCELLED"}
+        selected_keys = [key for key in MAP_KEYS if getattr(project.settings, MAP_EXPORT_ATTRS[key])]
+        if not selected_keys:
+            self.report({"WARNING"}, "Enable at least one map to export")
+            return {"CANCELLED"}
 
-        path = image_io.export_image_png(
-            image,
-            project.settings.export_directory,
-            project.settings.export_stem,
-            "ID",
-        )
+        try:
+            render_scene_maps(context.scene, context, selected_keys)
+        except Exception as exc:
+            self.report({"ERROR"}, str(exc))
+            return {"CANCELLED"}
+
+        paths = []
+        for key in selected_keys:
+            image = bpy.data.images.get(getattr(project, MAP_IMAGE_ATTRS[key], ""))
+            if image is None:
+                self.report({"ERROR"}, f"Missing generated {MAP_SUFFIXES[key]} map")
+                return {"CANCELLED"}
+            paths.append(
+                image_io.export_image_png(
+                    image,
+                    project.settings.export_directory,
+                    project.settings.export_stem,
+                    MAP_SUFFIXES[key],
+                )
+            )
         properties.clear_cut_preview(project)
         tag_hotspot_areas_for_redraw(context)
-        prefix = "Regenerated and exported" if regenerated else "Exported"
-        self.report({"INFO"}, f"{prefix} {path}")
+        self.report({"INFO"}, f"Exported {len(paths)} map(s) via {_last_render_backend} render in {_last_render_ms:.1f} ms")
+        return {"FINISHED"}
+
+
+class HOTSPOT_OT_preview_log(bpy.types.Operator):
+    bl_idname = "hotspot.preview_log"
+    bl_label = "Hotspot Preview Log"
+    bl_options = {"INTERNAL"}
+
+    message: StringProperty(name="Message", default="")
+
+    def execute(self, _context):
+        self.report({"INFO"}, self.message)
         return {"FINISHED"}
 
 
@@ -617,6 +937,7 @@ classes = (
     HOTSPOT_OT_activate_cut_tool,
     HOTSPOT_OT_render_map,
     HOTSPOT_OT_export_maps,
+    HOTSPOT_OT_preview_log,
 )
 
 
@@ -626,5 +947,6 @@ def register():
 
 
 def unregister():
+    cancel_auto_preview()
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

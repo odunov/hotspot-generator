@@ -199,6 +199,14 @@ def _reset_scene_transient_state():
             continue
         properties.normalize_active_node(project)
         properties.clear_cut_preview(project)
+        if project.nodes:
+            try:
+                from . import operators
+
+                operators.mark_project_dirty(project)
+            except Exception:
+                project.is_dirty = True
+                pass
 
 
 @persistent

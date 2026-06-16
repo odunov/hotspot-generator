@@ -12,13 +12,20 @@ def safe_name(value):
 
 
 def id_image_name(scene):
-    return f"{IMAGE_PREFIX}_{safe_name(scene.name)}_ID"
+    return map_image_name(scene, "ID")
 
 
-def ensure_image(name, width, height):
+def map_image_name(scene, suffix):
+    return f"{IMAGE_PREFIX}_{safe_name(scene.name)}_{suffix}"
+
+
+def ensure_image(name, width, height, float_buffer=False):
     image = bpy.data.images.get(name)
+    if image is not None and getattr(image, "is_float", False) != bool(float_buffer):
+        bpy.data.images.remove(image)
+        image = None
     if image is None:
-        image = bpy.data.images.new(name, width=width, height=height, alpha=True, float_buffer=False)
+        image = bpy.data.images.new(name, width=width, height=height, alpha=True, float_buffer=float_buffer)
     elif tuple(image.size) != (width, height):
         image.scale(width, height)
 
@@ -46,6 +53,16 @@ def show_image_in_context(context, image):
     space = getattr(context, "space_data", None)
     if space is not None and getattr(space, "type", None) == "IMAGE_EDITOR":
         space.image = image
+
+
+def show_image_in_open_editors(image):
+    for window in getattr(bpy.context.window_manager, "windows", []):
+        for area in getattr(window.screen, "areas", []):
+            if area.type != "IMAGE_EDITOR":
+                continue
+            for space in area.spaces:
+                if space.type == "IMAGE_EDITOR":
+                    space.image = image
 
 
 def export_image_png(image, directory, filename_stem, suffix="ID"):
