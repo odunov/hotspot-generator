@@ -4,7 +4,7 @@ Blender 5.x extension for generating hotspot texture bases: rectangular atlas ma
 
 ## Demo
 
-<video src="https://github.com/odunov/hotspot-generator/raw/main/media/hotspot-base-map-generator-demo.mp4" controls muted></video>
+[![Hotspot Base Map Generator demo](media/hotspot-base-map-generator-demo-preview.gif)](media/hotspot-base-map-generator-demo.mp4)
 
 [Watch the demo video](media/hotspot-base-map-generator-demo.mp4)
 
