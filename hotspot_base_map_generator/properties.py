@@ -168,6 +168,7 @@ class HotspotCanvasSettings(bpy.types.PropertyGroup):
         update=_dirty_preview_update(DIRTY_ID_MAPS),
     )
     auto_preview: BoolProperty(name="Auto Preview", default=True, update=_auto_preview_update)
+    allow_cpu_fallback: BoolProperty(name="Allow Slow CPU Fallback", default=False)
     preview_map: EnumProperty(name="Preview", items=PREVIEW_MAP_ITEMS, default="ID", update=_preview_map_update)
     gutter_pixels: IntProperty(name="Gutter", default=0, min=0, max=256, subtype="PIXEL", update=_dirty_all_preview_update)
     edge_width_pixels: IntProperty(name="Edge Width", default=2, min=1, max=64, subtype="PIXEL", update=_dirty_preview_update(DIRTY_EDGE_MAPS))
@@ -373,13 +374,22 @@ classes = (
 
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-    bpy.types.Scene.hotspot_project = PointerProperty(type=HotspotProject)
+    registered = []
+    try:
+        for cls in classes:
+            bpy.utils.register_class(cls)
+            registered.append(cls)
+        bpy.types.Scene.hotspot_project = PointerProperty(type=HotspotProject)
+    except Exception:
+        for cls in reversed(registered):
+            if hasattr(cls, "bl_rna"):
+                bpy.utils.unregister_class(cls)
+        raise
 
 
 def unregister():
     if hasattr(bpy.types.Scene, "hotspot_project"):
         del bpy.types.Scene.hotspot_project
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        if hasattr(cls, "bl_rna"):
+            bpy.utils.unregister_class(cls)

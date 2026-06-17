@@ -13,12 +13,15 @@ def register():
     if bpy is None:
         raise RuntimeError("Hotspot Base Map Generator must be registered inside Blender.")
 
-    properties.register()
-    operators.register()
-    ui.register()
-    gpu_preview.register()
-    overlay.register()
-    tools.register()
+    registered = []
+    for module in (properties, operators, ui, gpu_preview, overlay, tools):
+        try:
+            module.register()
+        except Exception:
+            for registered_module in reversed(registered):
+                registered_module.unregister()
+            raise
+        registered.append(module)
 
 
 def unregister():

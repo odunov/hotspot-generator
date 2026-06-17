@@ -21,7 +21,7 @@ If you need hotspot UV mapping, check out [Zen UV](https://superhivemarket.com/p
 - Recursive horizontal/vertical region splits with arbitrary ratios.
 - Equal `2x2` and custom rows/columns grid subdivision.
 - Image Editor Paint toolbar cutter tool with midpoint, unsnapped, loop-cut, and square-grid cut modes.
-- Live debounced GPU preview in the Image Editor, with CPU fallback.
+- Live debounced GPU preview in the Image Editor, with optional slow CPU fallback.
 - Generated ID, Edge, Mask, Height, Normal, AO, and Curvature maps.
 - Deterministic color, sequential grayscale, and stored per-region color modes.
 - Global rendered gutter/padding, hard edge width, height/bevel, normal, AO, and curvature settings.

@@ -31,6 +31,7 @@ class HOTSPOT_PT_canvas(bpy.types.Panel):
         settings = project.settings
         layout.prop(settings, "resolution")
         layout.prop(settings, "auto_preview")
+        layout.prop(settings, "allow_cpu_fallback")
         layout.prop(settings, "preview_map")
         layout.prop(settings, "gutter_pixels")
         layout.prop(settings, "edge_width_pixels")
@@ -218,10 +219,19 @@ classes = (
 
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    registered = []
+    try:
+        for cls in classes:
+            bpy.utils.register_class(cls)
+            registered.append(cls)
+    except Exception:
+        for cls in reversed(registered):
+            if hasattr(cls, "bl_rna"):
+                bpy.utils.unregister_class(cls)
+        raise
 
 
 def unregister():
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        if hasattr(cls, "bl_rna"):
+            bpy.utils.unregister_class(cls)
