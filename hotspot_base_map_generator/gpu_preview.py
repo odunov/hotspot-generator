@@ -117,7 +117,7 @@ const float CURVATURE_RESPONSE = 8.0;
 float height_at(vec2 pixel)
 {
     vec2 clamped_pixel = clamp(pixel, vec2(0.0), resolution - vec2(1.0));
-    return texture(height_tex, (clamped_pixel + vec2(0.5)) / resolution).r;
+    return texelFetch(height_tex, ivec2(floor(clamped_pixel + vec2(0.5))), 0).r;
 }
 
 vec3 disk_sample(int index)
@@ -315,9 +315,6 @@ def _state(scene, width, height):
         "key": "",
         "valid": False,
     }
-    for offscreen in (state["preview"], state["height"]):
-        offscreen.texture_color.filter_mode(False)
-        offscreen.texture_color.extend_mode("EXTEND")
     _states[key] = state
     return state
 
@@ -418,11 +415,6 @@ def _validate_pixels(pixels, resolution):
     return pixels
 
 
-def _setup_offscreen(offscreen):
-    offscreen.texture_color.filter_mode(False)
-    offscreen.texture_color.extend_mode("EXTEND")
-
-
 def render_scene_map_pixels(scene, key, resolution):
     if key not in MAP_KEYS:
         raise ValueError(f"Unsupported map key: {key}")
@@ -436,9 +428,6 @@ def render_scene_map_pixels(scene, key, resolution):
     preview = gpu.types.GPUOffScreen(resolution, resolution, format="RGBA32F")
     height = gpu.types.GPUOffScreen(resolution, resolution, format="RGBA32F") if key in HEIGHT_DERIVED_MAP_KEYS and key != "HEIGHT" else None
     try:
-        _setup_offscreen(preview)
-        if height is not None:
-            _setup_offscreen(height)
         _draw_map(preview, height, project, leaves, key, resolution)
         with preview.bind():
             pixels = gpu.types.Buffer("FLOAT", resolution * resolution * 4)
