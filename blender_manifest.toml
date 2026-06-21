@@ -7,7 +7,7 @@ tagline = "Generate hotspot texture base maps for external texturing"
 maintainer = "Hotspot Base Map Generator Contributors"
 type = "add-on"
 
-blender_version_min = "5.1.0"
+blender_version_min = "5.0.0"
 license = ["SPDX:GPL-3.0-or-later"]
 tags = ["UV", "Paint", "Import-Export"]
 

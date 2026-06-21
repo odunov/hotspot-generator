@@ -7,7 +7,10 @@
 - Removed unsupported GPU texture sampler mutations from live previews.
 - Write GPU failures, shader source, and hardware details to a persistent diagnostic log.
 - Namespace GPU shader helpers to avoid driver-specific GLSL symbol collisions.
-- Require Blender 5.1+; Blender 5.0.1's Vulkan shader compiler rejects the live-preview shader.
+
+## Known Issues
+
+- Blender 5.0.x with the Vulkan backend can reject the live-preview shader. Use the OpenGL backend or Blender 5.1+; CPU rendering is unaffected.
 
 ## 0.1.1 - 2026-06-17
 
