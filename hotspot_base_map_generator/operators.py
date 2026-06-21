@@ -249,9 +249,13 @@ def render_scene_maps(scene, context=None, keys=MAP_KEYS, resolution=None, clean
         _last_render_backend = "GPU"
         return images
     except Exception as exc:
+        from . import gpu_preview
+
+        log_path = gpu_preview.log_gpu_failure(exc, ", ".join(keys))
         if not project.settings.allow_cpu_fallback:
             _last_render_backend = "GPU failed"
-            raise RuntimeError(f"GPU render failed; enable Allow Slow CPU Fallback to use CPU. {exc}") from exc
+            detail = f" Diagnostics: {log_path}" if log_path else ""
+            raise RuntimeError(f"GPU render failed; enable Allow Slow CPU Fallback to use CPU. {exc}{detail}") from exc
         images = _render_scene_maps_cpu(scene, context, keys, resolution, clean)
         _last_render_backend = "CPU fallback"
         return images
@@ -281,15 +285,17 @@ def render_scene_preview_map(scene, context=None, debounce_ms=None):
     project = scene.hotspot_project
     key = _selected_preview_key(project)
     start = time.perf_counter()
-    try:
-        from . import gpu_preview
+    from . import gpu_preview
 
+    try:
         if gpu_preview.render_scene_preview(scene, key):
             _log_preview_timing(project, key, "GPU", (time.perf_counter() - start) * 1000.0, debounce_ms)
             return None
     except Exception as exc:
+        log_path = gpu_preview.log_gpu_failure(exc, key)
         if not project.settings.allow_cpu_fallback:
-            project.preview_status = f"{key} GPU failed: {exc}"
+            detail = f" Log: {log_path}" if log_path else ""
+            project.preview_status = f"{key} GPU failed: {exc}{detail}"
             return None
     image = _render_scene_maps_cpu(scene, context, (key,), project.settings.resolution, clean=False).get(key)
     _log_preview_timing(project, key, "CPU fallback", (time.perf_counter() - start) * 1000.0, debounce_ms)

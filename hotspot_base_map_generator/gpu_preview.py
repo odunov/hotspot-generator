@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import math
+from pathlib import Path
+import tempfile
+import traceback
 
 import bpy
 
@@ -15,6 +19,7 @@ _handler = None
 _states = {}
 _shaders = {}
 _batches = {}
+_LOG_FILENAME = "hotspot_base_map_generator.log"
 
 _LEAF_VERTEX = """
 void main()
@@ -284,6 +289,32 @@ def _free_state(state):
                 offscreen.free()
             except Exception:
                 pass
+
+
+def log_gpu_failure(exc, key):
+    try:
+        config_dir = bpy.utils.user_resource("CONFIG") or tempfile.gettempdir()
+        path = Path(config_dir) / _LOG_FILENAME
+        import gpu
+
+        shader_name = "derived" if key in HEIGHT_DERIVED_MAP_KEYS else "leaf"
+        shader_source = _DERIVED_FRAGMENT if shader_name == "derived" else _LEAF_FRAGMENT
+        with path.open("a", encoding="utf-8") as log:
+            log.write(f"\n{'=' * 72}\n{datetime.now().isoformat(timespec='seconds')} GPU failure ({key})\n")
+            log.write(f"Blender: {bpy.app.version_string}\n")
+            for name in ("backend_type_get", "vendor_get", "renderer_get", "version_get"):
+                getter = getattr(gpu.platform, name, None)
+                if getter is not None:
+                    try:
+                        value = getter()
+                    except Exception:
+                        value = "<unavailable>"
+                    log.write(f"{name[:-4]}: {value}\n")
+            log.write(f"Error: {exc!r}\n{traceback.format_exc()}\nShader ({shader_name}):\n{shader_source}\n")
+        print(f"[Hotspot] GPU failure logged to {path}")
+        return str(path)
+    except Exception:
+        return ""
 
 
 def _opaque_draw_state():

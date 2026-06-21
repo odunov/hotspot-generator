@@ -5,6 +5,7 @@
 - Deferred the extension's startup scene scan until Blender data is available.
 - Made extension cleanup continue after a module-level cleanup failure.
 - Removed unsupported GPU texture sampler mutations from live previews.
+- Write GPU failures, shader source, and hardware details to a persistent diagnostic log.
 
 ## 0.1.1 - 2026-06-17
 
