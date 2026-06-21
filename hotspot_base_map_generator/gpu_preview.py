@@ -30,12 +30,12 @@ void main()
 """
 
 _LEAF_FRAGMENT = """
-float clamp01(float value)
+float hotspot_clamp01(float value)
 {
     return clamp(value, 0.0, 1.0);
 }
 
-float rounded_rect_sdf(vec2 center, vec4 rect, float corner_radius)
+float hotspot_rounded_rect_sdf(vec2 center, vec4 rect, float corner_radius)
 {
     float hx = (rect.z - rect.x) * 0.5;
     float hy = (rect.w - rect.y) * 0.5;
@@ -48,7 +48,7 @@ float rounded_rect_sdf(vec2 center, vec4 rect, float corner_radius)
     return outside + inside - radius;
 }
 
-float mask_value(vec2 pixel, vec4 rect)
+float hotspot_mask_value(vec2 pixel, vec4 rect)
 {
     if (mask_mode == 0 || mask_size <= 0.0) {
         float gray = mask_mode == 0 ? 1.0 : 0.0;
@@ -87,22 +87,22 @@ void main()
         return;
     }
     if (map_mode == 2) {
-        float gray = mask_value(pixel, rect);
+        float gray = hotspot_mask_value(pixel, rect);
         fragColor = vec4(gray, gray, gray, 1.0);
         return;
     }
 
-    float sdf = rounded_rect_sdf(pixel + vec2(0.5), rect, corner_radius);
+    float sdf = hotspot_rounded_rect_sdf(pixel + vec2(0.5), rect, corner_radius);
     if (sdf > 0.0) {
         discard;
     }
     float ramp_width = max(0.0, bevel_width) + max(0.0, edge_softness);
     float ramp = 1.0;
     if (ramp_width > 0.0) {
-        float t = clamp01(-sdf / ramp_width);
+        float t = hotspot_clamp01(-sdf / ramp_width);
         ramp = t * t * (3.0 - 2.0 * t);
     }
-    float gray = clamp01(base_height + height_depth * pow(ramp, max(0.01, bevel_strength)));
+    float gray = hotspot_clamp01(base_height + height_depth * pow(ramp, max(0.01, bevel_strength)));
     fragColor = vec4(gray, gray, gray, 1.0);
 }
 """
@@ -116,16 +116,16 @@ void main()
 """
 
 _DERIVED_FRAGMENT = """
-const float AO_RESPONSE = 4.0;
-const float CURVATURE_RESPONSE = 8.0;
+const float HOTSPOT_AO_RESPONSE = 4.0;
+const float HOTSPOT_CURVATURE_RESPONSE = 8.0;
 
-float height_at(vec2 pixel)
+float hotspot_height_at(vec2 pixel)
 {
     vec2 clamped_pixel = clamp(pixel, vec2(0.0), resolution - vec2(1.0));
     return texelFetch(height_tex, ivec2(floor(clamped_pixel + vec2(0.5))), 0).r;
 }
 
-vec3 disk_sample(int index)
+vec3 hotspot_disk_sample(int index)
 {
     if (index == 0) return vec3(1.0, 0.0, 0.55);
     if (index == 1) return vec3(0.7071, 0.7071, 0.55);
@@ -145,24 +145,24 @@ vec3 disk_sample(int index)
     return vec3(0.4619, -0.1913, 1.0);
 }
 
-vec2 height_gradient_at(vec2 pixel, float radius)
+vec2 hotspot_height_gradient_at(vec2 pixel, float radius)
 {
     float r = max(1.0, radius);
-    float tl = height_at(pixel + vec2(-r, r));
-    float tc = height_at(pixel + vec2(0.0, r));
-    float tr = height_at(pixel + vec2(r, r));
-    float ml = height_at(pixel + vec2(-r, 0.0));
-    float mr = height_at(pixel + vec2(r, 0.0));
-    float bl = height_at(pixel + vec2(-r, -r));
-    float bc = height_at(pixel + vec2(0.0, -r));
-    float br = height_at(pixel + vec2(r, -r));
+    float tl = hotspot_height_at(pixel + vec2(-r, r));
+    float tc = hotspot_height_at(pixel + vec2(0.0, r));
+    float tr = hotspot_height_at(pixel + vec2(r, r));
+    float ml = hotspot_height_at(pixel + vec2(-r, 0.0));
+    float mr = hotspot_height_at(pixel + vec2(r, 0.0));
+    float bl = hotspot_height_at(pixel + vec2(-r, -r));
+    float bc = hotspot_height_at(pixel + vec2(0.0, -r));
+    float br = hotspot_height_at(pixel + vec2(r, -r));
     float scale = 0.25 / r;
     return vec2((tr + 2.0 * mr + br - tl - 2.0 * ml - bl) * scale, (tl + 2.0 * tc + tr - bl - 2.0 * bc - br) * scale);
 }
 
-vec2 normal_xy_at(vec2 pixel)
+vec2 hotspot_normal_xy_at(vec2 pixel)
 {
-    vec2 gradient = height_gradient_at(pixel, 1.0);
+    vec2 gradient = hotspot_height_gradient_at(pixel, 1.0);
     vec3 normal = normalize(vec3(-gradient.x, -gradient.y, 1.0));
     return normal.xy;
 }
@@ -170,10 +170,10 @@ vec2 normal_xy_at(vec2 pixel)
 void main()
 {
     vec2 pixel = floor(uv * resolution);
-    float h = height_at(pixel);
+    float h = hotspot_height_at(pixel);
 
     if (map_mode == 0) {
-        vec2 gradient = height_gradient_at(pixel, float(normal_radius));
+        vec2 gradient = hotspot_height_gradient_at(pixel, float(normal_radius));
         float dx = gradient.x * normal_strength;
         float dy = gradient.y * normal_strength;
         float len = sqrt(dx * dx + dy * dy + 1.0);
@@ -191,26 +191,26 @@ void main()
         float rise = 0.0;
         float weight_sum = 0.0;
         for (int index = 0; index < 16; index++) {
-            vec3 sample_info = disk_sample(index);
-            float sample_height = height_at(pixel + sample_info.xy * float(ao_radius));
+            vec3 sample_info = hotspot_disk_sample(index);
+            float sample_height = hotspot_height_at(pixel + sample_info.xy * float(ao_radius));
             rise += max(0.0, sample_height - h) * sample_info.z;
             weight_sum += sample_info.z;
         }
-        float gray = 1.0 - clamp((rise / weight_sum) * ao_strength * AO_RESPONSE, 0.0, 1.0);
+        float gray = 1.0 - clamp((rise / weight_sum) * ao_strength * HOTSPOT_AO_RESPONSE, 0.0, 1.0);
         fragColor = vec4(gray, gray, gray, 1.0);
         return;
     }
 
-    vec2 center_normal = normal_xy_at(pixel);
+    vec2 center_normal = hotspot_normal_xy_at(pixel);
     float bend = 0.0;
     float weight_sum = 0.0;
     for (int index = 0; index < 16; index++) {
-        vec3 sample_info = disk_sample(index);
-        vec2 sample_normal = normal_xy_at(pixel + sample_info.xy * float(curvature_radius));
+        vec3 sample_info = hotspot_disk_sample(index);
+        vec2 sample_normal = hotspot_normal_xy_at(pixel + sample_info.xy * float(curvature_radius));
         bend += dot(sample_normal - center_normal, normalize(sample_info.xy)) * sample_info.z;
         weight_sum += sample_info.z;
     }
-    float gray = clamp(0.5 + (bend / weight_sum) * curvature_strength * CURVATURE_RESPONSE, 0.0, 1.0);
+    float gray = clamp(0.5 + (bend / weight_sum) * curvature_strength * HOTSPOT_CURVATURE_RESPONSE, 0.0, 1.0);
     fragColor = vec4(gray, gray, gray, 1.0);
 }
 """
