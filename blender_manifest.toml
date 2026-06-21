@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "hotspot_base_map_generator"
-version = "0.1.1"
+version = "0.1.11"
 name = "Hotspot Base Map Generator"
 tagline = "Generate hotspot texture base maps for external texturing"
 maintainer = "Hotspot Base Map Generator Contributors"

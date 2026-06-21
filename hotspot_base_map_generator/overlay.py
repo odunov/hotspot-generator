@@ -193,7 +193,10 @@ def _project_from_scene(scene):
 
 
 def _reset_scene_transient_state():
-    for scene in bpy.data.scenes:
+    scenes = getattr(bpy.data, "scenes", None)
+    if scenes is None:
+        return False
+    for scene in scenes:
         project = _project_from_scene(scene)
         if project is None:
             continue
@@ -207,6 +210,14 @@ def _reset_scene_transient_state():
             except Exception:
                 project.is_dirty = True
                 pass
+    return True
+
+
+def _reset_scene_transient_state_after_register():
+    if not _reset_scene_transient_state():
+        return 0.1
+    _tag_all_image_editors()
+    return None
 
 
 @persistent
@@ -293,13 +304,18 @@ def register():
     if _handler is None:
         _handler = bpy.types.SpaceImageEditor.draw_handler_add(_draw_overlay, (), "WINDOW", "POST_PIXEL")
     _register_app_handlers()
-    _reset_scene_transient_state()
-    _tag_all_image_editors()
+    if not bpy.app.timers.is_registered(_reset_scene_transient_state_after_register):
+        bpy.app.timers.register(_reset_scene_transient_state_after_register, first_interval=0.0)
 
 
 def unregister():
     global _handler, _shader_cache
     _unregister_app_handlers()
+    try:
+        if bpy.app.timers.is_registered(_reset_scene_transient_state_after_register):
+            bpy.app.timers.unregister(_reset_scene_transient_state_after_register)
+    except Exception:
+        pass
     if _handler is not None:
         bpy.types.SpaceImageEditor.draw_handler_remove(_handler, "WINDOW")
         _handler = None

@@ -8,32 +8,36 @@ except ModuleNotFoundError:  # Allows pure Python tests outside Blender.
 if bpy is not None:
     from . import gpu_preview, operators, overlay, properties, tools, ui
 
+    _MODULES = (properties, operators, ui, gpu_preview, overlay, tools)
+
 
 def register():
     if bpy is None:
         raise RuntimeError("Hotspot Base Map Generator must be registered inside Blender.")
 
     registered = []
-    for module in (properties, operators, ui, gpu_preview, overlay, tools):
-        try:
+    try:
+        for module in _MODULES:
             module.register()
-        except Exception:
-            for registered_module in reversed(registered):
+            registered.append(module)
+    except Exception:
+        for registered_module in reversed(registered):
+            try:
                 registered_module.unregister()
-            raise
-        registered.append(module)
+            except Exception:
+                pass
+        raise
 
 
 def unregister():
     if bpy is None:
         return
 
-    tools.unregister()
-    overlay.unregister()
-    gpu_preview.unregister()
-    ui.unregister()
-    operators.unregister()
-    properties.unregister()
+    for module in reversed(_MODULES):
+        try:
+            module.unregister()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

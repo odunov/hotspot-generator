@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.11 - 2026-06-21
+
+- Deferred the extension's startup scene scan until Blender data is available.
+- Made extension cleanup continue after a module-level cleanup failure.
+
 ## 0.1.1 - 2026-06-17
 
 - Default rendering now fails clearly when GPU rendering is unavailable instead of silently falling back to slow CPU rendering.
