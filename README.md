@@ -1,6 +1,6 @@
 # Hotspot Base Map Generator
 
-Blender 5.x extension for generating hotspot texture bases: rectangular atlas maps you can use as a starting point in external texturing tools.
+Blender 5.1+ extension for generating hotspot texture bases: rectangular atlas maps you can use as a starting point in external texturing tools.
 
 ## Demo
 
